@@ -1,0 +1,30 @@
+version: '3.9'
+services:
+  api:
+    build: .
+    container_name: pokemon-api
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/pokemon_db
+      POKEAPI_BASE_URL: https://pokeapi.co/api/v2
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    container_name: pokemon-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: pokemon_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
