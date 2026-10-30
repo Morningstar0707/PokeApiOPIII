@@ -125,6 +125,37 @@ describe('Pokemon API', () => {
     expect(Array.isArray(response.body.data)).toBe(true);
   });
 
+  it('GET /api/pokemon applies pagination, filtering and sorting parameters', async () => {
+    mockedPrisma.pokemon.findMany.mockResolvedValueOnce([]);
+    mockedPrisma.pokemon.count.mockResolvedValueOnce(0);
+
+    const response = await request(app).get(
+      '/api/pokemon?page=2&limit=5&name=char&sort=name&order=desc',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.pagination).toEqual({
+      page: 2,
+      limit: 5,
+      total: 0,
+      totalPages: 0,
+    });
+    expect(mockedPrisma.pokemon.findMany).toHaveBeenCalledWith({
+      where: { name: { contains: 'char', mode: 'insensitive' } },
+      orderBy: { name: 'desc' },
+      skip: 5,
+      take: 5,
+    });
+  });
+
+  it('GET /api/pokemon rejects invalid query parameters', async () => {
+    const response = await request(app).get('/api/pokemon?page=0&limit=invalid');
+
+    expect(response.status).toBe(400);
+    expect(response.body.success).toBe(false);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('GET /api/pokemon/:id returns an existing pokemon', async () => {
     const response = await request(app).get('/api/pokemon/25');
 
@@ -140,6 +171,17 @@ describe('Pokemon API', () => {
 
     expect(response.status).toBe(404);
     expect(response.body.success).toBe(false);
+  });
+
+  it('GET /api/pokemon/:id rejects a non-positive or non-numeric id', async () => {
+    const invalidIds = ['0', 'abc'];
+
+    for (const id of invalidIds) {
+      const response = await request(app).get(`/api/pokemon/${id}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('INVALID_POKEMON_ID');
+    }
   });
 
   it('POST /api/pokemon creates a valid pokemon', async () => {
@@ -218,6 +260,26 @@ describe('Pokemon API', () => {
     expect(response.body.success).toBe(false);
   });
 
+  it('POST /api/pokemon rejects a duplicate name', async () => {
+    mockedPrisma.pokemon.findUnique.mockResolvedValueOnce(null);
+    mockedPrisma.pokemon.findFirst.mockResolvedValueOnce({ id: 25 });
+
+    const response = await request(app).post('/api/pokemon').send({
+      id: 152,
+      name: 'pikachu',
+      photo: 'https://example.com/other.png',
+      hp: 50,
+      attack: 50,
+      defense: 50,
+      special_attack: 50,
+      special_defense: 50,
+      speed: 50,
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('POKEMON_NAME_ALREADY_EXISTS');
+  });
+
   it('PUT /api/pokemon/:id updates an existing pokemon', async () => {
     mockedPrisma.pokemon.findUnique.mockResolvedValueOnce({
       id: 25,
@@ -270,6 +332,26 @@ describe('Pokemon API', () => {
     expect(response.body.success).toBe(false);
   });
 
+  it('PUT /api/pokemon/:id rejects an unknown field', async () => {
+    const response = await request(app).put('/api/pokemon/25').send({ unknown: 'field' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('PUT /api/pokemon/:id rejects a duplicate name', async () => {
+    mockedPrisma.pokemon.findUnique.mockResolvedValueOnce({
+      id: 25,
+      name: 'pikachu',
+    });
+    mockedPrisma.pokemon.findFirst.mockResolvedValueOnce({ id: 6, name: 'charizard' });
+
+    const response = await request(app).put('/api/pokemon/25').send({ name: 'charizard' });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('POKEMON_NAME_ALREADY_EXISTS');
+  });
+
   it('DELETE /api/pokemon/:id deletes an existing pokemon', async () => {
     mockedPrisma.pokemon.findUnique.mockResolvedValueOnce({
       id: 25,
@@ -311,6 +393,24 @@ describe('Pokemon API', () => {
 
     expect(response.status).toBe(404);
     expect(response.body.success).toBe(false);
+  });
+
+  it('returns health information and API documentation routes', async () => {
+    const healthResponse = await request(app).get('/health');
+    const docsResponse = await request(app).get('/api-docs');
+
+    expect(healthResponse.status).toBe(200);
+    expect(healthResponse.body).toEqual({ success: true, message: 'API is healthy' });
+    expect(docsResponse.status).toBe(301);
+    expect(docsResponse.headers.location).toBe('/api-docs/');
+  });
+
+  it('returns a structured error for an unknown route', async () => {
+    const response = await request(app).get('/api/unknown');
+
+    expect(response.status).toBe(404);
+    expect(response.body.success).toBe(false);
+    expect(response.body.error.code).toBe('ROUTE_NOT_FOUND');
   });
 
   it('validates negative stats', async () => {

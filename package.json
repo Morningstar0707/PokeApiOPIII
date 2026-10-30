@@ -8,6 +8,7 @@
     "build": "tsc --project tsconfig.json",
     "start": "node dist/src/server.js",
     "test": "jest --runInBand",
+    "test:integration": "jest --config jest.integration.config.cjs --runInBand",
     "lint": "eslint . --ext .ts",
     "seed": "ts-node prisma/seed.ts",
     "prisma:migrate": "prisma migrate dev --name init",

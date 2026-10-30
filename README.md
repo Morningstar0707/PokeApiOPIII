@@ -153,6 +153,20 @@ http://localhost:3000/api-docs
 npm test
 ```
 
+Las pruebas unitarias/de API usan mocks de Prisma y no requieren una base de datos. Para ejecutar las pruebas de integración contra PostgreSQL dentro de Docker:
+
+```bash
+docker compose build api
+docker compose up -d db
+docker compose run --rm api npm run prisma:generate
+docker compose run --rm api npm run prisma:migrate
+docker compose run --rm api npm run test:integration
+```
+
+La estrategia completa y los casos cubiertos están documentados en [docs/ESTRATEGIA-PRUEBAS.md](docs/ESTRATEGIA-PRUEBAS.md).
+
+Para ejecutar los casos manualmente en Postman y preparar las capturas de evidencia, consulta [docs/GUIA-PRUEBAS-MANUALES.md](docs/GUIA-PRUEBAS-MANUALES.md).
+
 ## Estructura del proyecto
 
 ```text
