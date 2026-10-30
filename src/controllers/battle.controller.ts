@@ -10,7 +10,7 @@ class BattleController {
       const battle = await battleService.create(playerOnePokemonId, playerTwoPokemonId);
       res.status(201).json({ success: true, data: battle });
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith('Unable to load battle data')) {
+      if (error instanceof Error && error.message.startsWith('No se pudieron cargar los datos de combate')) {
         next(new AppError('BATTLE_DATA_UNAVAILABLE', error.message, 503));
         return;
       }

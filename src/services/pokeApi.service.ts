@@ -129,8 +129,12 @@ class PokeApiService {
         .map(({ data }) => ({
           id: data.name as string,
           name: (data.names.find(
-            (entry: { language: { name: string } }) => entry.language.name === 'en',
-          )?.name ?? data.name) as string,
+            (entry: { language: { name: string } }) => entry.language.name === 'es',
+          )?.name ??
+            data.names.find(
+              (entry: { language: { name: string } }) => entry.language.name === 'en',
+            )?.name ??
+            data.name) as string,
           type: data.type.name as string,
           power: data.power as number | null,
           accuracy: (data.accuracy as number | null) ?? 100,
@@ -149,10 +153,10 @@ class PokeApiService {
       return { types, moves };
     } catch (error) {
       if (error instanceof Error) {
-        throw new Error(`Unable to load battle data for Pokémon ${id}: ${error.message}`);
+        throw new Error('No se pudieron cargar los datos de combate del Pokémon ' + id);
       }
 
-      throw new Error(`Unable to load battle data for Pokémon ${id}`);
+      throw new Error('No se pudieron cargar los datos de combate del Pokémon ' + id);
     }
   }
 }

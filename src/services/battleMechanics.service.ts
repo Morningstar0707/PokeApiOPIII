@@ -58,7 +58,7 @@ export function resolveAttack(
       damage: 0,
       critical: false,
       effectiveness: 1,
-      message: `${attacker.pokemon.name} used ${move.name}, but it missed.`,
+      message: `${attacker.pokemon.name} usó ${move.name}, pero falló.`,
     };
   }
 
@@ -67,12 +67,14 @@ export function resolveAttack(
   defender.currentHp = Math.max(0, defender.currentHp - damageApplied);
 
   const effectivenessText =
-    result.effectiveness > 1
-      ? " It's super effective!"
-      : result.effectiveness < 1
-        ? " It's not very effective..."
-        : '';
-  const criticalText = result.critical ? ' A critical hit!' : '';
+    result.effectiveness === 0
+      ? ' No tuvo efecto.'
+      : result.effectiveness > 1
+        ? ' ¡Es supereficaz!'
+        : result.effectiveness < 1
+          ? ' No es muy eficaz.'
+          : '';
+  const criticalText = result.critical ? ' ¡Golpe crítico!' : '';
 
   return {
     attacker: attacker.pokemon.name,
@@ -81,6 +83,6 @@ export function resolveAttack(
     damage: damageApplied,
     critical: result.critical,
     effectiveness: result.effectiveness,
-    message: `${attacker.pokemon.name} used ${move.name} and dealt ${damageApplied} damage.${effectivenessText}${criticalText}`,
+    message: `${attacker.pokemon.name} usó ${move.name} e hizo ${damageApplied} puntos de daño.${effectivenessText}${criticalText}`,
   };
 }

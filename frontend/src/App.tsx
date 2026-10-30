@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ApiRequestError, createBattle, getBattle, getPokemon, takeTurn } from './api';
-import type { Battle, BattleMove, Pokemon } from './types';
+import type { Battle, BattleActionResult, BattleMove, Pokemon } from './types';
 
 const typeNames: Record<string, string> = {
   normal: 'Normal',
@@ -69,6 +69,59 @@ function formatNumber(id: number) {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Ocurrió un error inesperado.';
+}
+
+const legacyMoveTranslations: Record<string, string> = {
+  'thunder shock': 'Impactrueno',
+  'solar beam': 'Rayo Solar',
+  'thunderbolt': 'Rayo',
+  'quick attack': 'Ataque Rápido',
+  'vine whip': 'Látigo Cepa',
+  'ember': 'Ascuas',
+  'flamethrower': 'Lanzallamas',
+  'water gun': 'Pistola Agua',
+  'hydro pump': 'Hidrobomba',
+  'razor leaf': 'Hoja Afilada',
+  'ice beam': 'Rayo Hielo',
+  'earthquake': 'Terremoto',
+  'body slam': 'Golpe Cuerpo',
+  'bite': 'Mordisco',
+  'scratch': 'Arañazo',
+  'gust': 'Tornado',
+  'wing attack': 'Ataque Ala',
+  'poison sting': 'Picotazo Venenoso',
+  'double-edge': 'Doble Filo',
+  'dig': 'Excavar',
+  'rock slide': 'Avalancha',
+  'tackle': 'Placaje',
+  'thunder wave': 'Onda Trueno',
+  'hyper beam': 'Hiperrayo',
+};
+
+function formatMoveName(name: string): string {
+  return legacyMoveTranslations[name.toLowerCase()] ?? formatName(name);
+}
+
+function formatActionMessage(action: BattleActionResult): string {
+  const attacker = formatName(action.attacker);
+  const move =
+    formatMoveName(action.move);
+
+  if (!action.hit) {
+    return `${attacker} usó ${move}, pero falló.`;
+  }
+
+  const effectivenessText =
+    action.effectiveness === 0
+      ? ' No tuvo efecto.'
+      : action.effectiveness > 1
+        ? ' ¡Es supereficaz!'
+        : action.effectiveness < 1
+          ? ' No es muy eficaz.'
+          : '';
+  const criticalText = action.critical ? ' ¡Golpe crítico!' : '';
+
+  return `${attacker} usó ${move} e hizo ${action.damage} puntos de daño.${effectivenessText}${criticalText}`;
 }
 
 function TypeBadge({ type }: { type: string }) {
@@ -183,18 +236,33 @@ function MoveButton({
     >
       <span className="move-type-mark">{typeIcons[move.type] ?? '✦'}</span>
       <span className="move-copy">
-        <strong>{formatName(move.name)}</strong>
+        <strong>{formatMoveName(move.name)}</strong>
         <span>
           {typeNames[move.type] ?? formatName(move.type)} ·{' '}
           {move.damageClass === 'physical' ? 'Físico' : 'Especial'} · {move.accuracy}% precisión
         </span>
       </span>
       <span className="move-power">
-        <small>POW</small>
+        <small>POT.</small>
         {move.power}
       </span>
     </button>
   );
+}
+
+interface BattleAnimation {
+  attacker: 'player' | 'rival';
+  phase: 'launch' | 'impact';
+  moveType: string;
+  hit: boolean;
+}
+
+const ATTACK_ANIMATION_MS = 480;
+const IMPACT_ANIMATION_MS = 340;
+
+function waitForMotion(duration: number): Promise<void> {
+  const wait = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : duration;
+  return new Promise((resolve) => window.setTimeout(resolve, wait));
 }
 
 function App() {
@@ -208,7 +276,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [battleError, setBattleError] = useState('');
   const [lastActionCount, setLastActionCount] = useState(0);
-  const [firstAttacker, setFirstAttacker] = useState<'player' | 'rival' | null>(null);
+  const [actionAnimation, setActionAnimation] = useState<BattleAnimation | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -247,6 +315,40 @@ function App() {
   const rivalPokemon = battle?.playerTwo.pokemon ?? pokemon.find((entry) => entry.id === rivalId);
   const recentActions = battle?.history.slice(lastActionCount) ?? [];
   const battleFinished = battle?.status === 'finished';
+  const playerAttacking = Boolean(
+    actionAnimation &&
+      actionAnimation.attacker === 'player' &&
+      actionAnimation.phase === 'launch',
+  );
+  const rivalAttacking = Boolean(
+    actionAnimation &&
+      actionAnimation.attacker === 'rival' &&
+      actionAnimation.phase === 'launch',
+  );
+  const playerWasHit = Boolean(
+    actionAnimation &&
+      actionAnimation.attacker === 'rival' &&
+      actionAnimation.phase === 'impact' &&
+      actionAnimation.hit,
+  );
+  const rivalWasHit = Boolean(
+    actionAnimation &&
+      actionAnimation.attacker === 'player' &&
+      actionAnimation.phase === 'impact' &&
+      actionAnimation.hit,
+  );
+  const playerDodged = Boolean(
+    actionAnimation &&
+      actionAnimation.attacker === 'rival' &&
+      actionAnimation.phase === 'launch' &&
+      !actionAnimation.hit,
+  );
+  const rivalDodged = Boolean(
+    actionAnimation &&
+      actionAnimation.attacker === 'player' &&
+      actionAnimation.phase === 'launch' &&
+      !actionAnimation.hit,
+  );
 
   async function beginBattle() {
     if (playerId === null || rivalId === null) return;
@@ -266,19 +368,41 @@ function App() {
   async function chooseMove(move: BattleMove) {
     if (!battle || busy || battle.status !== 'active') return;
     setBusy(true);
-    setFirstAttacker(
-      battle.playerOne.pokemon.speed === battle.playerTwo.pokemon.speed
-        ? Math.random() < 0.5
-          ? 'player'
-          : 'rival'
-        : battle.playerOne.pokemon.speed > battle.playerTwo.pokemon.speed
-          ? 'player'
-          : 'rival',
-    );
+    setActionAnimation(null);
     setBattleError('');
     setLastActionCount(battle.history.length);
+
     try {
       const updatedBattle = await takeTurn(battle.id, move.id);
+      const actions = updatedBattle.history.slice(battle.history.length);
+
+      for (const action of actions) {
+        const attacker: BattleAnimation['attacker'] =
+          action.attacker === battle.playerOne.pokemon.name ? 'player' : 'rival';
+        const availableMoves =
+          attacker === 'player' ? battle.playerOne.moves : battle.playerTwo.moves;
+        const moveType =
+          availableMoves.find((availableMove) => availableMove.name === action.move)?.type ??
+          'normal';
+        const animation: BattleAnimation = {
+          attacker,
+          phase: 'launch',
+          moveType,
+          hit: action.hit,
+        };
+
+        setActionAnimation(animation);
+        await waitForMotion(ATTACK_ANIMATION_MS);
+
+        if (action.hit) {
+          setActionAnimation({ ...animation, phase: 'impact' });
+          await waitForMotion(IMPACT_ANIMATION_MS);
+        }
+
+        setActionAnimation(null);
+        await waitForMotion(90);
+      }
+
       setBattle(updatedBattle);
     } catch (error) {
       if (error instanceof ApiRequestError && error.code === 'BATTLE_CONFLICT') {
@@ -290,8 +414,8 @@ function App() {
       }
       setBattleError(getErrorMessage(error));
     } finally {
+      setActionAnimation(null);
       setBusy(false);
-      setFirstAttacker(null);
     }
   }
 
@@ -299,7 +423,7 @@ function App() {
     setBattle(null);
     setBattleError('');
     setLastActionCount(0);
-    setFirstAttacker(null);
+    setActionAnimation(null);
   }
 
   return (
@@ -310,7 +434,7 @@ function App() {
             <i />
           </span>
           <span className="brand-title">
-            POKÉMON<span> BATTLE CLUB</span>
+            POKÉMON<span> CLUB DE COMBATE</span>
           </span>
         </a>
         <div className="topbar-right">
@@ -602,12 +726,27 @@ function App() {
                 <i />
               </div>
 
+              {actionAnimation && actionAnimation.phase === 'launch' && actionAnimation.hit && (
+                <div
+                  className={`attack-projectile projectile-${actionAnimation.attacker}`}
+                  data-type={actionAnimation.moveType}
+                  aria-hidden="true"
+                />
+              )}
+              {actionAnimation && actionAnimation.phase === 'impact' && actionAnimation.hit && (
+                <div
+                  className={`impact-burst impact-${actionAnimation.attacker === 'player' ? 'rival' : 'player'}`}
+                  data-type={actionAnimation.moveType}
+                  aria-hidden="true"
+                />
+              )}
+
               {rivalPokemon && (
                 <>
                   <div className="battle-hud hud-rival">
                     <div className="hud-name-row">
                       <strong>{formatName(rivalPokemon.name)}</strong>
-                      <span>Lv. 50</span>
+                      <span>Nv. 50</span>
                     </div>
                     <StatBar
                       label="RIVAL"
@@ -621,7 +760,13 @@ function App() {
                     </div>
                   </div>
                   <img
-                    className={`battle-sprite sprite-rival ${battle.playerTwo.currentHp === 0 ? 'sprite-fainted' : ''} ${firstAttacker === 'rival' ? 'sprite-attacking' : ''}`}
+                    className={[
+                    'battle-sprite sprite-rival',
+                    battle.playerTwo.currentHp === 0 && 'sprite-fainted',
+                    rivalAttacking && 'sprite-attacking',
+                    rivalWasHit && 'sprite-hit',
+                    rivalDodged && 'sprite-dodging',
+                  ].filter(Boolean).join(' ')}
                     src={rivalPokemon.photo}
                     alt={formatName(rivalPokemon.name)}
                   />
@@ -633,7 +778,7 @@ function App() {
                   <div className="battle-hud hud-player">
                     <div className="hud-name-row">
                       <strong>{formatName(playerPokemon.name)}</strong>
-                      <span>Lv. 50</span>
+                      <span>Nv. 50</span>
                     </div>
                     <StatBar
                       label="TU POKÉMON"
@@ -648,7 +793,13 @@ function App() {
                     </div>
                   </div>
                   <img
-                    className={`battle-sprite sprite-player ${battle.playerOne.currentHp === 0 ? 'sprite-fainted' : ''} ${firstAttacker === 'player' ? 'sprite-attacking' : ''}`}
+                    className={[
+                    'battle-sprite sprite-player',
+                    battle.playerOne.currentHp === 0 && 'sprite-fainted',
+                    playerAttacking && 'sprite-attacking',
+                    playerWasHit && 'sprite-hit',
+                    playerDodged && 'sprite-dodging',
+                  ].filter(Boolean).join(' ')}
                     src={playerPokemon.photo}
                     alt={formatName(playerPokemon.name)}
                   />
@@ -664,8 +815,8 @@ function App() {
                 <i>✦ ✦ ✦</i>
               </div>
               <div className="battlefield-footer">
-                <span>◉ KANTO LEAGUE</span>
-                <span>NO. 001 — 151</span>
+                <span>◉ LIGA KANTO</span>
+                <span>NUM. 001 — 151</span>
               </div>
             </div>
 
@@ -683,7 +834,7 @@ function App() {
                       : `${formatName(battle.winner ?? '')} ganó el combate. ¡La revancha te espera!`}
                   </p>
                   {recentActions.map((action, index) => (
-                    <small key={`${battle.turn}-${index}`}>{action.message}</small>
+                    <small key={`${battle.turn}-${index}`}>{formatActionMessage(action)}</small>
                   ))}
                 </div>
                 <button className="start-button result-button" type="button" onClick={resetBattle}>
@@ -719,7 +870,7 @@ function App() {
                     <div className="log-heading">
                       <span>REGISTRO DE COMBATE</span>
                       <span className="log-live">
-                        <i /> LIVE
+                        <i /> EN VIVO
                       </span>
                     </div>
                     {recentActions.length ? (
@@ -732,7 +883,7 @@ function App() {
                             {action.attacker === playerPokemon?.name ? '›' : '‹'}
                           </span>
                           <div>
-                            <strong>{action.message}</strong>
+                            <strong>{formatActionMessage(action)}</strong>
                             {action.hit && (
                               <small>
                                 {action.critical ? 'GOLPE CRÍTICO · ' : ''}
@@ -764,7 +915,7 @@ function App() {
               </div>
             )}
             <div className="battle-actions">
-              <button type="button" className="back-button" onClick={resetBattle}>
+              <button type="button" className="back-button" onClick={resetBattle} disabled={busy}>
                 ← CAMBIAR EQUIPO
               </button>
               <span>
@@ -776,7 +927,7 @@ function App() {
       </div>
 
       <footer className="site-footer">
-        <span>© 2026 POKÉMON BATTLE CLUB</span>
+        <span>© 2026 POKÉMON CLUB DE COMBATE</span>
         <span>
           HECHO PARA ENTRENADORES <b>◆</b>
         </span>

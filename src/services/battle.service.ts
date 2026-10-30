@@ -17,7 +17,7 @@ class BattleService {
     ]);
 
     if (!playerOnePokemon || !playerTwoPokemon) {
-      throw new AppError('POKEMON_NOT_FOUND', 'Both Pokémon must exist in the project API', 404);
+      throw new AppError('POKEMON_NOT_FOUND', 'Ambos Pokémon deben existir en la Pokédex del proyecto.', 404);
     }
 
     const [playerOneData, playerTwoData] = await Promise.all([
@@ -51,7 +51,7 @@ class BattleService {
     const battle = storedBattle.battle;
 
     if (battle.status !== 'active') {
-      throw new AppError('BATTLE_FINISHED', 'This battle has already finished', 409);
+      throw new AppError('BATTLE_FINISHED', 'Este combate ya terminó.', 409);
     }
 
     const playerOneMove = this.getSelectedMove(battle.playerOne, playerOneMoveId);
@@ -99,7 +99,7 @@ class BattleService {
     if (!saved) {
       throw new AppError(
         'BATTLE_CONFLICT',
-        'The battle changed during this turn. Reload its state and try again.',
+        'El combate cambió durante este turno. Actualiza el estado e inténtalo de nuevo.',
         409,
       );
     }
@@ -110,7 +110,7 @@ class BattleService {
   private async findStoredBattle(id: string): Promise<StoredBattle> {
     const storedBattle = await battleRepository.findById(id);
     if (!storedBattle) {
-      throw new AppError('BATTLE_NOT_FOUND', 'Battle not found or expired', 404);
+      throw new AppError('BATTLE_NOT_FOUND', 'No se encontró el combate o ya venció.', 404);
     }
 
     return storedBattle;
@@ -135,7 +135,7 @@ class BattleService {
     ) {
       throw new AppError(
         'INCOMPLETE_BATTLE_DATA',
-        'Required battle data is missing for ' + pokemon.name,
+        'Faltan datos de combate para ' + pokemon.name,
         503,
       );
     }
@@ -153,7 +153,7 @@ class BattleService {
     if (!move) {
       throw new AppError(
         'INVALID_BATTLE_MOVE',
-        moveId + ' is not available to ' + combatant.pokemon.name,
+        'El movimiento ' + moveId + ' no está disponible para ' + combatant.pokemon.name,
         400,
       );
     }
