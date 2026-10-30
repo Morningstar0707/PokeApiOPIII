@@ -7,6 +7,8 @@ Este proyecto académico tiene como objetivo construir una API REST propia basad
 ## Tecnologías utilizadas
 
 - Node.js
+- React
+- Vite
 - TypeScript
 - Express.js
 - PostgreSQL
@@ -51,11 +53,25 @@ npm install
 
 ## Configuración de variables de entorno
 
-Crea un archivo `.env` copiando el ejemplo:
+Crea `.env` a partir de `.env.example` y configura la URL de una base PostgreSQL disponible. Prisma requiere `DATABASE_URL`; tener el archivo de ejemplo no basta si no has creado `.env`.
 
 ```bash
 cp .env.example .env
 ```
+
+En PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Abre `.env` y sustituye los datos de conexión por tus credenciales locales. El formato general de la URL es:
+
+```env
+DATABASE_URL="postgresql://USUARIO:CONTRASENA@localhost:5432/pokemon_db?schema=public"
+```
+
+Reemplaza `USUARIO` y `CONTRASENA` por los valores de tu PostgreSQL. No compartas ni subas el archivo `.env`.
 
 Ejemplo de contenido:
 
@@ -64,6 +80,8 @@ PORT=3000
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/pokemon_db"
 POKEAPI_BASE_URL="https://pokeapi.co/api/v2"
 ```
+
+En producción, configura API_WRITE_KEY con un secreto aleatorio de al menos 32 caracteres para proteger las rutas de creación, actualización y eliminación de Pokémon. Envía la cabecera Authorization con el formato Bearer seguido de la clave. Configura también CORS_ORIGINS con el origen de tu interfaz.
 
 ## Configuración de PostgreSQL
 
@@ -77,7 +95,7 @@ Genera el cliente de Prisma y aplica migraciones:
 
 ```bash
 npm run prisma:generate
-npm run prisma:migrate
+npx prisma migrate deploy
 ```
 
 ## Seed de los 151 Pokémon
@@ -95,6 +113,8 @@ Este script:
 - transforma la respuesta
 - guarda o actualiza cada Pokémon en PostgreSQL
 - evita duplicados con upsert
+- valida la conexión a PostgreSQL antes de consultar la API
+- informa cuántos registros guardó realmente y termina con error si no logra guardar los 151
 
 ## Ejecución en desarrollo
 
@@ -102,11 +122,21 @@ Este script:
 npm run dev
 ```
 
+En otra terminal, inicia la interfaz web con recarga en caliente:
+
+```bash
+npm run dev:client
+```
+
+La aplicación de combate quedará disponible en `http://localhost:5173`. El servidor API sirve la versión compilada de la interfaz en `http://localhost:3000` después de ejecutar `npm run build`.
+
 ## Ejecución con Docker
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
+
+Compose espera a que PostgreSQL esté disponible y aplica las migraciones antes de iniciar la API. Para cargar la Pokédex una vez, ejecuta: docker compose exec api npm run seed.
 
 ## Endpoints
 
@@ -139,6 +169,14 @@ Actualiza un Pokémon existente.
 
 Elimina un Pokémon.
 
+## Interfaz de combate
+
+La aplicación web de combate se ejecuta en `http://localhost:3000` al iniciar el servidor. Para desarrollo con recarga en caliente, ejecuta la API con `npm run dev` y la interfaz con `npm run dev:client`; Vite estará disponible en `http://localhost:5173` y enviará las peticiones `/api` a la API local.
+
+La interfaz permite elegir ambos Pokémon, buscar en la Pokédex, iniciar el combate, seleccionar movimientos, ver el registro de acciones, salud y resultado. Los endpoints del módulo están disponibles en `/api/battles`.
+
+Consulta las reglas y limitaciones de la lógica en [docs/COMBATE.md](docs/COMBATE.md).
+
 ## Swagger
 
 La documentación Swagger estará disponible en:
@@ -159,7 +197,7 @@ Las pruebas unitarias/de API usan mocks de Prisma y no requieren una base de dat
 docker compose build api
 docker compose up -d db
 docker compose run --rm api npm run prisma:generate
-docker compose run --rm api npm run prisma:migrate
+docker compose run --rm api npm run prisma:deploy
 docker compose run --rm api npm run test:integration
 ```
 
@@ -182,6 +220,12 @@ pokemon-api/
 │   ├── types/
 │   ├── app.ts
 │   └── server.ts
+├── frontend/
+│   ├── index.html
+│   └── src/
+│       ├── App.tsx
+│       ├── api.ts
+│       └── styles.css
 ├── prisma/
 │   ├── schema.prisma
 │   └── seed.ts

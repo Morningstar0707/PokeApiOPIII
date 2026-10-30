@@ -65,7 +65,7 @@ Desde la raiz del proyecto:
 docker compose build api
 docker compose up -d db
 docker compose run --rm api npm run prisma:generate
-docker compose run --rm api npm run prisma:migrate
+docker compose run --rm api npm run prisma:deploy
 docker compose run --rm api npm run test:integration
 ```
 

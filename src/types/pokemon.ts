@@ -8,6 +8,7 @@ export interface Pokemon {
   special_attack: number;
   special_defense: number;
   speed: number;
+  types: string[];
   created_at?: Date;
   updated_at?: Date;
 }
@@ -22,6 +23,7 @@ export interface PokemonCreateInput {
   special_attack: number;
   special_defense: number;
   speed: number;
+  types?: string[];
 }
 
 export interface PokemonUpdateInput {
@@ -33,6 +35,7 @@ export interface PokemonUpdateInput {
   special_attack?: number;
   special_defense?: number;
   speed?: number;
+  types?: string[];
 }
 
 export interface PagedPokemonResponse {

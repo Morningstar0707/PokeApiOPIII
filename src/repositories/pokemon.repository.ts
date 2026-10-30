@@ -60,7 +60,9 @@ class PokemonRepository {
   }
 
   async existsByName(name: string): Promise<boolean> {
-    const pokemon = await prisma.pokemon.findFirst({ where: { name } });
+    const pokemon = await prisma.pokemon.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
+    });
     return Boolean(pokemon);
   }
 

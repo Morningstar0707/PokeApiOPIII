@@ -17,8 +17,21 @@ model Pokemon {
   special_attack   Int
   special_defense Int
   speed           Int
+  types           String[] @default([])
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 
   @@map("pokemon")
+}
+
+model BattleSession {
+  id         String   @id
+  state      Json
+  version    Int      @default(0)
+  expires_at DateTime
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([expires_at])
+  @@map("battle_sessions")
 }

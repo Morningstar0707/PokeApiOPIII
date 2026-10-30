@@ -9,7 +9,7 @@ Ejecuta desde la raiz del proyecto:
 ```bash
 docker compose build api
 docker compose up -d db
-docker compose run --rm api npm run prisma:migrate
+docker compose run --rm api npm run prisma:deploy
 docker compose run --rm api npm run seed
 docker compose up -d api
 ```
@@ -129,7 +129,7 @@ Para la captura de la suite automatizada:
 ```bash
 docker compose build api
 docker compose up -d db
-docker compose run --rm api npm run prisma:migrate
+docker compose run --rm api npm run prisma:deploy
 docker compose run --rm api npm run test:integration
 ```
 

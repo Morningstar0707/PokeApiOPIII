@@ -30,6 +30,14 @@ export const errorHandler = (error: Error, _req: Request, res: Response, _next: 
     statusCode = 400;
     code = 'VALIDATION_ERROR';
     message = error.issues[0]?.message || 'Invalid request payload';
+  } else if ((error as { type?: string }).type === 'entity.parse.failed') {
+    statusCode = 400;
+    code = 'INVALID_JSON';
+    message = 'Request body contains invalid JSON';
+  } else if ((error as { type?: string }).type === 'entity.too.large') {
+    statusCode = 413;
+    code = 'PAYLOAD_TOO_LARGE';
+    message = 'Request body is too large';
   } else if ((error as { code?: string }).code === 'P2002') {
     statusCode = 409;
     code = 'DB_CONFLICT';
@@ -38,7 +46,7 @@ export const errorHandler = (error: Error, _req: Request, res: Response, _next: 
     statusCode = 404;
     code = 'DB_NOT_FOUND';
     message = 'Record not found';
-  } else if (error instanceof Error) {
+  } else if (error instanceof Error && process.env.NODE_ENV !== 'production') {
     message = error.message;
   }
 
