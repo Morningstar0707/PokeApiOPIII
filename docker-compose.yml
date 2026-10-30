@@ -1,31 +1,36 @@
 services:
   api:
     build: .
-    container_name: pokemon-api
-    command: ["sh", "-c", "npm run prisma:deploy && exec npm run start"]
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/pokemon_db
+      DATABASE_URL: postgresql://postgres:pokemon-local@db:5432/pokemon_db?schema=public
       POKEAPI_BASE_URL: https://pokeapi.co/api/v2
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}"
       API_WRITE_KEY: "${API_WRITE_KEY:-}"
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   db:
-    image: postgres:15-alpine
-    container_name: pokemon-db
-    ports:
-      - "127.0.0.1:5432:5432"
+    image: postgres:15.19-alpine3.24
     environment:
       POSTGRES_DB: pokemon_db
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: pokemon-local
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

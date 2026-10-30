@@ -12,6 +12,7 @@
     "test:integration": "jest --config jest.integration.config.cjs --runInBand",
     "lint": "eslint .",
     "seed": "ts-node prisma/seed.ts",
+    "seed:if-empty": "node scripts/seed-if-empty.cjs",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:generate": "prisma generate"

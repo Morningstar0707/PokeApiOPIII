@@ -132,11 +132,37 @@ La aplicación de combate quedará disponible en `http://localhost:5173`. El ser
 
 ## Ejecución con Docker
 
+Solo necesitas tener Docker Desktop instalado y abierto. No hace falta instalar Node.js ni PostgreSQL en el computador.
+
 ```bash
 docker compose up -d --build
 ```
 
-Compose espera a que PostgreSQL esté disponible y aplica las migraciones antes de iniciar la API. Para cargar la Pokédex una vez, ejecuta: docker compose exec api npm run seed.
+La primera ejecución construye la aplicación, inicia PostgreSQL, aplica las migraciones y carga los 151 Pokémon desde PokeAPI. Cuando termine, abre <http://localhost:3000> para jugar. La carga inicial necesita conexión a internet.
+
+La base de datos queda guardada en un volumen de Docker. Al volver a ejecutar `docker compose up -d`, conserva los datos y no vuelve a descargar los Pokémon. Para ver el arranque y posibles errores:
+
+```bash
+docker compose logs -f api
+```
+
+Para detener el juego sin borrar la base de datos:
+
+```bash
+docker compose down
+```
+
+Para compartirlo, sube el proyecto a un repositorio y envíale el enlace. Tu amigo necesita Docker Desktop instalado y abierto; luego ejecuta:
+
+```bash
+git clone <URL-del-repositorio>
+cd <carpeta-del-proyecto>
+docker compose up -d --build
+```
+
+Después abre <http://localhost:3000>. Si ese puerto ya está ocupado, define `APP_PORT=3001` en `.env` y entra a <http://localhost:3001>. PostgreSQL solo es accesible dentro de Docker, así que no interfiere con una instalación local de PostgreSQL en el puerto 5432.
+
+Para borrar también la base de datos y empezar de cero, ejecuta `docker compose down -v`. Esto elimina los datos guardados.
 
 ## Endpoints
 
