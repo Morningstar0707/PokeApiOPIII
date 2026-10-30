@@ -20,8 +20,18 @@ model Pokemon {
   types           String[] @default([])
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
+  combat_cache    PokemonCombatCache?
 
   @@map("pokemon")
+}
+
+model PokemonCombatCache {
+  pokemon_id Int      @id
+  data       Json
+  updated_at DateTime @updatedAt
+  pokemon    Pokemon  @relation(fields: [pokemon_id], references: [id], onDelete: Cascade)
+
+  @@map("pokemon_combat_cache")
 }
 
 model BattleSession {

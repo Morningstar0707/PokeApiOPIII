@@ -60,6 +60,11 @@ describe('battle mechanics', () => {
     expect(getTypeEffectiveness('electric', ['ground'])).toBe(0);
   });
 
+  it('applies the Generation I Bug and Poison weaknesses in both directions', () => {
+    expect(getTypeEffectiveness('bug', ['poison'])).toBe(2);
+    expect(getTypeEffectiveness('poison', ['bug'])).toBe(2);
+  });
+
   it('does not damage when a move misses', () => {
     const attacker = createCombatant(createPokemon());
     const defender = createCombatant(createPokemon({ name: 'defender', types: ['grass'] }));

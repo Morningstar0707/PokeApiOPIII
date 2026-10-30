@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../src/app';
+import { AppError } from '../src/middlewares/errorHandler';
 import battleService from '../src/services/battle.service';
 
 jest.mock('../src/services/battle.service', () => ({
@@ -29,7 +30,7 @@ describe('Battle API', () => {
 
   it('returns a controlled error when battle data cannot be loaded from PokeAPI', async () => {
     mockedBattleService.create.mockRejectedValueOnce(
-      new Error('Unable to load battle data for Pokémon 25: service unavailable'),
+      new AppError('BATTLE_DATA_UNAVAILABLE', 'PokeAPI no est? disponible.', 503),
     );
 
     const response = await request(app)

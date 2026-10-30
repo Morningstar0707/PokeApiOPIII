@@ -8,14 +8,24 @@ La API ofrece combates 1 contra 1 en `POST /api/battles`, `GET /api/battles/:id`
 
 Las partidas se almacenan en PostgreSQL y vencen tres horas después de su último turno. Varias instancias pueden consultar la misma partida. Cada turno se guarda con control de versión para rechazar escrituras simultáneas sobre un estado desactualizado.
 
+## Arquitectura y decisiones
+
+La interfaz React/Vite solo presenta el combate y envía identificadores de Pokémon y movimientos. Express valida las solicitudes; `BattleService` coordina turnos y estado, `battleMechanics.service.ts` calcula los ataques y `typeEffectiveness.ts` contiene la tabla de tipos. Esta separación permite probar las reglas sin depender de la interfaz.
+
+Se conserva TypeScript, React, Express y Prisma porque ya son la base del proyecto: así el módulo reutiliza la API y los tipos existentes en lugar de crear otro servicio. PostgreSQL guarda los Pokémon y las sesiones de combate. Jest/Supertest prueban la lógica y el contrato HTTP.
+
+El combate es de una persona contra la CPU. La persona escoge su movimiento y el servidor elige al azar uno de los movimientos válidos del rival. La velocidad determina quién actúa primero; un empate se decide al azar.
+
 ## Datos y reglas
 
 - Los Pokémon y estadísticas se obtienen de PostgreSQL, reutilizando sus identificadores. El campo `types` se guarda desde la importación de PokeAPI; para registros previos sin tipos, el inicio de batalla los consulta a PokeAPI.
-- Los movimientos se consultan de PokeAPI en tiempo de creación de batalla: se priorizan movimientos de nivel de primera generación hasta el nivel 50 y se ofrecen hasta cuatro movimientos con poder, precisión y tipo soportados. No se copian los movimientos a los registros de Pokémon.
+- En el primer combate de cada Pokémon, se consultan los movimientos aprendidos por nivel en Gen I hasta nivel 50. Se ofrecen hasta cuatro movimientos con poder, precisión y tipo soportados. No se copian a los registros del Pokémon.
+- Los datos validados de movimientos se guardan en `pokemon_combat_cache`. Cada Pokémon solo necesita consultarse en PokeAPI la primera vez; el caché sobrevive a reinicios porque está en PostgreSQL. Un Pokémon aún no cacheado requiere conexión a PokeAPI. Si el servicio externo falla, la API devuelve `503 BATTLE_DATA_UNAVAILABLE` y no guarda datos incompletos.
 - El nivel utilizado es 50. Los puntos de salud máximos y actuales se inicializan con la estadística base `hp`.
 - La fórmula es la aproximación indicada en la especificación. Se trunca el daño final hacia abajo y se aplica un mínimo de 1 cuando un ataque no es inmune; la inmunidad siempre causa cero.
 - Los movimientos físicos usan Ataque y Defensa; los especiales usan Ataque Especial del atacante y Ataque Especial del defensor, como representación de la estadística Especial única de primera generación.
 - El STAB multiplica por 1,5; la variación es aleatoria de 0,85 a 1,00. Los críticos usan velocidad base / 512 como probabilidad y multiplican el daño por 1,5. Los modificadores y la probabilidad están centralizados en `battleMechanics.service.ts`.
+- La tabla usa los tipos de primera generación: Bicho y Veneno se afectan mutuamente con efectividad ×2; también conserva la inmunidad de Psíquico a movimientos Fantasma propia de Gen I.
 - La precisión se comprueba antes del cálculo del daño. El atacante con mayor Velocidad actúa primero y un empate se resuelve aleatoriamente.
 
 ## Ejemplos HTTP

@@ -3,6 +3,7 @@ import { env } from '../config/env';
 import { PokemonCombatData } from '../types/battle';
 import { PokemonCreateInput } from '../types/pokemon';
 import { isGenerationOneType } from '../utils/typeEffectiveness';
+import { pokemonCombatDataSchema } from '../validators/battleData.validator';
 
 const DEFAULT_TIMEOUT = 5000;
 interface PokemonMoveEntry {
@@ -150,7 +151,7 @@ class PokeApiService {
         )
         .slice(0, 4);
 
-      return { types, moves };
+      return pokemonCombatDataSchema.parse({ types, moves });
     } catch (error) {
       if (error instanceof Error) {
         throw new Error('No se pudieron cargar los datos de combate del Pokémon ' + id);

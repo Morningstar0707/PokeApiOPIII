@@ -2,10 +2,11 @@ import { randomUUID } from 'crypto';
 import { AppError } from '../middlewares/errorHandler';
 import battleRepository, { StoredBattle } from '../repositories/battle.repository';
 import pokemonRepository from '../repositories/pokemon.repository';
-import { Battle, Combatant } from '../types/battle';
+import { Battle, Combatant, PokemonCombatData } from '../types/battle';
 import { isGenerationOneType } from '../utils/typeEffectiveness';
 import { resolveAttack } from './battleMechanics.service';
 import pokeApiService from './pokeApi.service';
+import { pokemonCombatDataSchema } from '../validators/battleData.validator';
 
 class BattleService {
   private readonly battleTtlMs = 3 * 60 * 60 * 1000;
@@ -21,9 +22,10 @@ class BattleService {
     }
 
     const [playerOneData, playerTwoData] = await Promise.all([
-      pokeApiService.getPokemonCombatData(playerOnePokemonId),
-      pokeApiService.getPokemonCombatData(playerTwoPokemonId),
+      this.getCombatData(playerOnePokemonId),
+      this.getCombatData(playerTwoPokemonId),
     ]);
+
     const playerOne = this.createCombatant(playerOnePokemon, playerOneData);
     const playerTwo = this.createCombatant(playerTwoPokemon, playerTwoData);
 
@@ -119,6 +121,34 @@ class BattleService {
   private chooseComputerMove(combatant: Combatant) {
     const index = Math.floor(Math.random() * combatant.moves.length);
     return combatant.moves[index];
+  }
+
+  private async getCombatData(pokemonId: number): Promise<PokemonCombatData> {
+    const cached = await pokemonRepository.findCombatData(pokemonId);
+    if (cached) return cached;
+
+    let data: PokemonCombatData;
+    try {
+      data = await pokeApiService.getPokemonCombatData(pokemonId);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'No se pudieron consultar los movimientos en PokeAPI.';
+      throw new AppError('BATTLE_DATA_UNAVAILABLE', message, 503);
+    }
+
+    const parsed = pokemonCombatDataSchema.safeParse(data);
+    if (!parsed.success) {
+      throw new AppError(
+        'INCOMPLETE_BATTLE_DATA',
+        `Los datos de combate de ${pokemonId} están incompletos.`,
+        503,
+      );
+    }
+
+    await pokemonRepository.saveCombatData(pokemonId, parsed.data);
+    return parsed.data;
   }
 
   private createCombatant(

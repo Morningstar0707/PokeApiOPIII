@@ -138,6 +138,8 @@ Solo necesitas tener Docker Desktop instalado y abierto. No hace falta instalar 
 docker compose up -d --build
 ```
 
+La primera batalla de cada Pokémon consulta sus movimientos en PokeAPI y los guarda en PostgreSQL. Las siguientes partidas usan ese caché persistente, incluso después de reiniciar los contenedores.
+
 La primera ejecución construye la aplicación, inicia PostgreSQL, aplica las migraciones y carga los 151 Pokémon desde PokeAPI. Cuando termine, abre <http://localhost:3000> para jugar. La carga inicial necesita conexión a internet.
 
 La base de datos queda guardada en un volumen de Docker. Al volver a ejecutar `docker compose up -d`, conserva los datos y no vuelve a descargar los Pokémon. Para ver el arranque y posibles errores:
@@ -212,6 +214,8 @@ http://localhost:3000/api-docs
 ```
 
 ## Ejecución de pruebas
+
+Las reglas y decisiones del combate están en [docs/COMBATE.md](docs/COMBATE.md); el resultado reproducible de las pruebas y su cobertura están en [docs/INFORME-PRUEBAS-COMBATE.md](docs/INFORME-PRUEBAS-COMBATE.md). La lista de comprobación visual está en [docs/GUIA-PRUEBAS-COMBATE.md](docs/GUIA-PRUEBAS-COMBATE.md).
 
 ```bash
 npm test

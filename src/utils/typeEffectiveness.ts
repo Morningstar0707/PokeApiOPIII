@@ -44,8 +44,8 @@ const typeChart: Record<
   },
   psychic: { superEffective: ['fighting', 'poison'], notVeryEffective: ['psychic'] },
   bug: {
-    superEffective: ['grass', 'psychic'],
-    notVeryEffective: ['fire', 'fighting', 'poison', 'flying', 'ghost'],
+    superEffective: ['grass', 'psychic', 'poison'],
+    notVeryEffective: ['fire', 'fighting', 'flying', 'ghost'],
   },
   rock: {
     superEffective: ['fire', 'ice', 'flying', 'bug'],

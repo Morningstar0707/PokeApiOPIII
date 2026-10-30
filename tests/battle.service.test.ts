@@ -7,7 +7,11 @@ import { Pokemon } from '../src/types/pokemon';
 
 jest.mock('../src/repositories/pokemon.repository', () => ({
   __esModule: true,
-  default: { findById: jest.fn() },
+  default: {
+    findById: jest.fn(),
+    findCombatData: jest.fn(),
+    saveCombatData: jest.fn(),
+  },
 }));
 
 jest.mock('../src/repositories/battle.repository', () => ({
@@ -92,6 +96,8 @@ describe('battle service', () => {
         ? createPokemon({ id: 1, name: 'slowmon', hp: 1, speed: 10 })
         : createPokemon({ id: 2, name: 'fastmon', speed: 100 }),
     );
+    mockedRepository.findCombatData.mockResolvedValue(null);
+    mockedRepository.saveCombatData.mockResolvedValue(undefined);
     mockedPokeApi.getPokemonCombatData.mockResolvedValue(combatData);
   });
 
@@ -109,25 +115,80 @@ describe('battle service', () => {
     expect(result.winner).toBe('fastmon');
     expect(result.loser).toBe('slowmon');
     expect(result.playerOne.currentHp).toBe(0);
-    await expect(battleService.takeTurn(battle.id, 'weak-hit')).rejects.toThrow(
-      'This battle has already finished',
-    );
+    await expect(battleService.takeTurn(battle.id, 'weak-hit')).rejects.toMatchObject({
+      code: 'BATTLE_FINISHED',
+      statusCode: 409,
+    });
   });
 
   it('rejects moves not provided for that participant', async () => {
     const battle = await battleService.create(1, 2);
 
-    await expect(battleService.takeTurn(battle.id, 'not-available')).rejects.toThrow(
-      'not available to slowmon',
-    );
+    await expect(battleService.takeTurn(battle.id, 'not-available')).rejects.toMatchObject({
+      code: 'INVALID_BATTLE_MOVE',
+      statusCode: 400,
+    });
     expect(battle.turn).toBe(0);
   });
 
-  it('reports a controlled error when a selected Pokémon does not exist', async () => {
+  it('reports a controlled error when a selected Pok?mon does not exist', async () => {
     mockedRepository.findById.mockResolvedValueOnce(null);
 
-    await expect(battleService.create(999, 2)).rejects.toThrow(
-      'Both Pokémon must exist in the project API',
-    );
+    await expect(battleService.create(999, 2)).rejects.toMatchObject({
+      code: 'POKEMON_NOT_FOUND',
+      statusCode: 404,
+    });
+  });
+
+  it('maps PokeAPI failures to a controlled 503 response error', async () => {
+    mockedPokeApi.getPokemonCombatData.mockRejectedValueOnce(new Error('request timed out'));
+
+    await expect(battleService.create(1, 2)).rejects.toMatchObject({
+      code: 'BATTLE_DATA_UNAVAILABLE',
+      statusCode: 503,
+    });
+  });
+
+  it('uses persistent combat data when it is already cached', async () => {
+    mockedRepository.findCombatData.mockResolvedValue(combatData);
+
+    await battleService.create(1, 2);
+
+    expect(mockedPokeApi.getPokemonCombatData).not.toHaveBeenCalled();
+    expect(mockedRepository.saveCombatData).not.toHaveBeenCalled();
+  });
+
+  it('stores newly loaded combat data for later battles', async () => {
+    await battleService.create(1, 2);
+
+    expect(mockedRepository.saveCombatData).toHaveBeenCalledWith(1, combatData);
+    expect(mockedRepository.saveCombatData).toHaveBeenCalledWith(2, combatData);
+  });
+
+  it('rejects incomplete combat data with a controlled error', async () => {
+    mockedPokeApi.getPokemonCombatData.mockResolvedValueOnce({ types: [], moves: [] });
+
+    await expect(battleService.create(1, 2)).rejects.toMatchObject({
+      code: 'INCOMPLETE_BATTLE_DATA',
+      statusCode: 503,
+    });
+    expect(mockedRepository.saveCombatData).not.toHaveBeenCalledWith(1, { types: [], moves: [] });
+  });
+
+  it('keeps the rival CPU selecting one of its own random moves', async () => {
+    mockedPokeApi.getPokemonCombatData
+      .mockResolvedValueOnce(combatData)
+      .mockResolvedValueOnce({
+        types: ['normal'],
+        moves: [
+          combatData.moves[0],
+          { ...combatData.moves[1], id: 'cpu-pick', name: 'CPU Pick' },
+        ],
+      });
+
+    const battle = await battleService.create(1, 2);
+    const result = await battleService.takeTurn(battle.id, 'weak-hit');
+
+    expect(result.history[0]).toMatchObject({ attacker: 'fastmon', move: 'CPU Pick' });
   });
 });
