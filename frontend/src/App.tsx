@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiRequestError, createBattle, getBattle, getPokemon, takeTurn } from './api';
 import type { Battle, BattleActionResult, BattleMove, Pokemon } from './types';
+import retroAudio from './retroAudio';
 
 const typeNames: Record<string, string> = {
   normal: 'Normal',
@@ -63,6 +64,15 @@ function formatName(name: string) {
     .join(' ');
 }
 
+const GENERATION_ONE_SPRITES =
+  'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-i/red-blue/transparent';
+
+function getBattleSpriteUrl(id: number, view: 'front' | 'back'): string {
+  return view === 'back'
+    ? `${GENERATION_ONE_SPRITES}/back/${id}.png`
+    : `${GENERATION_ONE_SPRITES}/${id}.png`;
+}
+
 function formatNumber(id: number) {
   return `#${String(id).padStart(3, '0')}`;
 }
@@ -122,6 +132,18 @@ function formatActionMessage(action: BattleActionResult): string {
   const criticalText = action.critical ? ' ¡Golpe crítico!' : '';
 
   return `${attacker} usó ${move} e hizo ${action.damage} puntos de daño.${effectivenessText}${criticalText}`;
+}
+
+function filterPokemon(entries: Pokemon[], searchTerm: string): Pokemon[] {
+  const query = searchTerm.trim().toLowerCase();
+  if (!query) return entries;
+
+  return entries.filter(
+    (entry) =>
+      entry.name.includes(query) ||
+      String(entry.id).includes(query) ||
+      entry.types.some((type) => type.includes(query)),
+  );
 }
 
 function TypeBadge({ type }: { type: string }) {
@@ -269,7 +291,8 @@ function App() {
   const [pokemon, setPokemon] = useState<Pokemon[]>([]);
   const [loadingPokemon, setLoadingPokemon] = useState(true);
   const [apiError, setApiError] = useState('');
-  const [search, setSearch] = useState('');
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [rivalSearch, setRivalSearch] = useState('');
   const [playerId, setPlayerId] = useState<number | null>(null);
   const [rivalId, setRivalId] = useState<number | null>(null);
   const [battle, setBattle] = useState<Battle | null>(null);
@@ -277,6 +300,41 @@ function App() {
   const [battleError, setBattleError] = useState('');
   const [lastActionCount, setLastActionCount] = useState(0);
   const [actionAnimation, setActionAnimation] = useState<BattleAnimation | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [dialogMessage, setDialogMessage] = useState('');
+  const [typedDialogMessage, setTypedDialogMessage] = useState('');
+  const [dialogComplete, setDialogComplete] = useState(true);
+  const dialogueResolver = useRef<(() => void) | null>(null);
+  const dialogueTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!dialogMessage) {
+      setTypedDialogMessage('');
+      setDialogComplete(true);
+      return;
+    }
+
+    setTypedDialogMessage('');
+    setDialogComplete(false);
+    let visibleCharacters = 0;
+    const interval = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 24;
+    const timer = window.setInterval(() => {
+      visibleCharacters += 1;
+      setTypedDialogMessage(dialogMessage.slice(0, visibleCharacters));
+
+      if (visibleCharacters >= dialogMessage.length) {
+        window.clearInterval(timer);
+        dialogueTimer.current = null;
+        setDialogComplete(true);
+      }
+    }, interval);
+    dialogueTimer.current = timer;
+
+    return () => {
+      window.clearInterval(timer);
+      if (dialogueTimer.current === timer) dialogueTimer.current = null;
+    };
+  }, [dialogMessage]);
 
   useEffect(() => {
     let active = true;
@@ -300,16 +358,14 @@ function App() {
     };
   }, []);
 
-  const filteredPokemon = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return pokemon;
-    return pokemon.filter(
-      (entry) =>
-        entry.name.includes(query) ||
-        String(entry.id).includes(query) ||
-        entry.types.some((type) => type.includes(query)),
-    );
-  }, [pokemon, search]);
+  const filteredPlayerPokemon = useMemo(
+    () => filterPokemon(pokemon, playerSearch),
+    [pokemon, playerSearch],
+  );
+  const filteredRivalPokemon = useMemo(
+    () => filterPokemon(pokemon, rivalSearch),
+    [pokemon, rivalSearch],
+  );
 
   const playerPokemon = battle?.playerOne.pokemon ?? pokemon.find((entry) => entry.id === playerId);
   const rivalPokemon = battle?.playerTwo.pokemon ?? pokemon.find((entry) => entry.id === rivalId);
@@ -354,6 +410,8 @@ function App() {
     if (playerId === null || rivalId === null) return;
     setBusy(true);
     setBattleError('');
+    retroAudio.startMusic();
+    retroAudio.play('confirm');
     try {
       const newBattle = await createBattle(playerId, rivalId);
       setBattle(newBattle);
@@ -371,12 +429,16 @@ function App() {
     setActionAnimation(null);
     setBattleError('');
     setLastActionCount(battle.history.length);
+    retroAudio.play('confirm');
 
     try {
       const updatedBattle = await takeTurn(battle.id, move.id);
       const actions = updatedBattle.history.slice(battle.history.length);
+      let stagedPlayerOne = battle.playerOne;
+      let stagedPlayerTwo = battle.playerTwo;
+      const stagedHistory: BattleActionResult[] = [...battle.history];
 
-      for (const action of actions) {
+      for (const [index, action] of actions.entries()) {
         const attacker: BattleAnimation['attacker'] =
           action.attacker === battle.playerOne.pokemon.name ? 'player' : 'rival';
         const availableMoves =
@@ -392,18 +454,51 @@ function App() {
         };
 
         setActionAnimation(animation);
+        retroAudio.play('launch', moveType);
         await waitForMotion(ATTACK_ANIMATION_MS);
 
         if (action.hit) {
           setActionAnimation({ ...animation, phase: 'impact' });
+          retroAudio.play('impact', moveType, action.critical);
           await waitForMotion(IMPACT_ANIMATION_MS);
+        } else {
+          retroAudio.play('miss');
         }
 
         setActionAnimation(null);
-        await waitForMotion(90);
+        await waitForBattleMessage(formatActionMessage(action));
+
+        if (attacker === 'player') {
+          stagedPlayerTwo = {
+            ...stagedPlayerTwo,
+            currentHp: Math.max(0, stagedPlayerTwo.currentHp - action.damage),
+          };
+        } else {
+          stagedPlayerOne = {
+            ...stagedPlayerOne,
+            currentHp: Math.max(0, stagedPlayerOne.currentHp - action.damage),
+          };
+        }
+        stagedHistory.push(action);
+
+        const isFinalAction = index === actions.length - 1;
+        const stagedBattle: Battle = {
+          ...battle,
+          status:
+            isFinalAction && updatedBattle.status === 'finished' ? 'finished' : 'active',
+          playerOne: stagedPlayerOne,
+          playerTwo: stagedPlayerTwo,
+          history: [...stagedHistory],
+          ...(isFinalAction && updatedBattle.status === 'finished'
+            ? { winner: updatedBattle.winner, loser: updatedBattle.loser }
+            : {}),
+          ...(isFinalAction ? { turn: updatedBattle.turn } : {}),
+        };
+        setBattle(stagedBattle);
       }
 
       setBattle(updatedBattle);
+      if (updatedBattle.status === 'finished') retroAudio.play('victory');
     } catch (error) {
       if (error instanceof ApiRequestError && error.code === 'BATTLE_CONFLICT') {
         try {
@@ -419,11 +514,50 @@ function App() {
     }
   }
 
+  function waitForBattleMessage(message: string): Promise<void> {
+    return new Promise((resolve) => {
+      dialogueResolver.current = resolve;
+      setDialogMessage(message);
+    });
+  }
+
+  function advanceDialogue(): void {
+    if (!dialogMessage) return;
+
+    if (!dialogComplete) {
+      if (dialogueTimer.current !== null) {
+        window.clearInterval(dialogueTimer.current);
+        dialogueTimer.current = null;
+      }
+      setTypedDialogMessage(dialogMessage);
+      setDialogComplete(true);
+      return;
+    }
+
+    const resume = dialogueResolver.current;
+    dialogueResolver.current = null;
+    setDialogMessage('');
+    resume?.();
+  }
+
+  function toggleSound(): void {
+    const nextEnabled = !soundEnabled;
+    setSoundEnabled(nextEnabled);
+    retroAudio.setEnabled(nextEnabled);
+    if (nextEnabled) {
+      retroAudio.startMusic();
+      retroAudio.play('confirm');
+    }
+  }
+
   function resetBattle() {
     setBattle(null);
     setBattleError('');
     setLastActionCount(0);
     setActionAnimation(null);
+    setDialogMessage('');
+    setTypedDialogMessage('');
+    dialogueResolver.current = null;
   }
 
   return (
@@ -438,6 +572,20 @@ function App() {
           </span>
         </a>
         <div className="topbar-right">
+          <button
+            className="sound-toggle"
+            type="button"
+            aria-pressed={soundEnabled}
+            aria-label={soundEnabled ? 'Silenciar sonido de 8 bits' : 'Activar sonido de 8 bits'}
+            onClick={toggleSound}
+          >
+            <span className="sound-toggle-icon" aria-hidden="true">
+              {soundEnabled ? '♫' : '♪'}
+            </span>
+            <span className="sound-toggle-label">
+              {soundEnabled ? 'SONIDO ACTIVADO' : 'SONIDO APAGADO'}
+            </span>
+          </button>
           <span className="gen-label">
             <span className="live-dot" /> KANTO · GENERACIÓN I
           </span>
@@ -502,7 +650,13 @@ function App() {
                       ) : playerPokemon ? (
                         <>
                           <div className="preview-image">
-                            <img src={playerPokemon.photo} alt={formatName(playerPokemon.name)} />
+                            <img src={getBattleSpriteUrl(playerPokemon.id, 'back')}
+                    onError={(event) => {
+                      const image = event.currentTarget;
+                      if (image.getAttribute('src') !== playerPokemon.photo) {
+                        image.src = playerPokemon.photo;
+                      }
+                    }} alt={formatName(playerPokemon.name)} />
                           </div>
                           <div className="preview-info">
                             <span className="preview-number">
@@ -526,8 +680,8 @@ function App() {
                     <label className="search-box">
                       <span>⌕</span>
                       <input
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
+                        value={playerSearch}
+                        onChange={(event) => setPlayerSearch(event.target.value)}
                         placeholder="Buscar por nombre, tipo o número..."
                         aria-label="Buscar Pokémon"
                       />
@@ -540,7 +694,7 @@ function App() {
                           <span className="loader" />
                         </div>
                       ) : (
-                        filteredPokemon.map((entry) => (
+                        filteredPlayerPokemon.map((entry) => (
                           <PokemonOption
                             key={entry.id}
                             pokemon={entry}
@@ -550,12 +704,12 @@ function App() {
                           />
                         ))
                       )}
-                      {!loadingPokemon && filteredPokemon.length === 0 && (
+                      {!loadingPokemon && filteredPlayerPokemon.length === 0 && (
                         <p className="empty-list">No encontramos Pokémon con ese nombre.</p>
                       )}
                     </div>
                     <div className="list-footer">
-                      <span>{filteredPokemon.length} POKÉMON</span>
+                      <span>{filteredPlayerPokemon.length} POKÉMON</span>
                       <span>DATOS DE LA POKÉDEX</span>
                     </div>
                   </section>
@@ -590,7 +744,13 @@ function App() {
                       ) : rivalPokemon ? (
                         <>
                           <div className="preview-image">
-                            <img src={rivalPokemon.photo} alt={formatName(rivalPokemon.name)} />
+                            <img src={getBattleSpriteUrl(rivalPokemon.id, 'front')}
+                    onError={(event) => {
+                      const image = event.currentTarget;
+                      if (image.getAttribute('src') !== rivalPokemon.photo) {
+                        image.src = rivalPokemon.photo;
+                      }
+                    }} alt={formatName(rivalPokemon.name)} />
                           </div>
                           <div className="preview-info">
                             <span className="preview-number">
@@ -614,8 +774,8 @@ function App() {
                     <label className="search-box">
                       <span>⌕</span>
                       <input
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
+                        value={rivalSearch}
+                        onChange={(event) => setRivalSearch(event.target.value)}
                         placeholder="Busca un rival para el desafío..."
                         aria-label="Buscar Pokémon rival"
                       />
@@ -628,7 +788,7 @@ function App() {
                           <span className="loader" />
                         </div>
                       ) : (
-                        filteredPokemon.map((entry) => (
+                        filteredRivalPokemon.map((entry) => (
                           <PokemonOption
                             key={entry.id}
                             pokemon={entry}
@@ -638,9 +798,12 @@ function App() {
                           />
                         ))
                       )}
+                      {!loadingPokemon && filteredRivalPokemon.length === 0 && (
+                        <p className="empty-list">No encontramos Pokémon con ese nombre.</p>
+                      )}
                     </div>
                     <div className="list-footer">
-                      <span>ELIGE TU RIVAL</span>
+                      <span>{filteredRivalPokemon.length} POKÉMON</span>
                       <span>UN RETO A TU MEDIDA</span>
                     </div>
                   </section>
@@ -767,7 +930,13 @@ function App() {
                     rivalWasHit && 'sprite-hit',
                     rivalDodged && 'sprite-dodging',
                   ].filter(Boolean).join(' ')}
-                    src={rivalPokemon.photo}
+                    src={getBattleSpriteUrl(rivalPokemon.id, 'front')}
+                    onError={(event) => {
+                      const image = event.currentTarget;
+                      if (image.getAttribute('src') !== rivalPokemon.photo) {
+                        image.src = rivalPokemon.photo;
+                      }
+                    }}
                     alt={formatName(rivalPokemon.name)}
                   />
                 </>
@@ -800,7 +969,13 @@ function App() {
                     playerWasHit && 'sprite-hit',
                     playerDodged && 'sprite-dodging',
                   ].filter(Boolean).join(' ')}
-                    src={playerPokemon.photo}
+                    src={getBattleSpriteUrl(playerPokemon.id, 'back')}
+                    onError={(event) => {
+                      const image = event.currentTarget;
+                      if (image.getAttribute('src') !== playerPokemon.photo) {
+                        image.src = playerPokemon.photo;
+                      }
+                    }}
                     alt={formatName(playerPokemon.name)}
                   />
                 </>
@@ -819,6 +994,33 @@ function App() {
                 <span>NUM. 001 — 151</span>
               </div>
             </div>
+
+            {!battleFinished && (
+              <div className={`battle-dialog ${dialogMessage ? 'dialog-active' : ''}`} aria-live="polite">
+                <p className="battle-dialog-text">
+                  {dialogMessage
+                    ? typedDialogMessage
+                    : busy
+                      ? 'Resolviendo el turno...'
+                      : `¿Qué hará ${formatName(playerPokemon?.name ?? '')}?`}
+                </p>
+                <button
+                  className="dialog-next"
+                  type="button"
+                  onClick={advanceDialogue}
+                  disabled={!dialogMessage}
+                  aria-label={
+                    !dialogMessage
+                      ? 'Esperando el siguiente mensaje'
+                      : dialogComplete
+                        ? 'Continuar'
+                        : 'Mostrar el mensaje completo'
+                  }
+                >
+                  {dialogMessage ? (dialogComplete ? '▼' : 'A') : '▼'}
+                </button>
+              </div>
+            )}
 
             {battleFinished ? (
               <div className="result-card">
@@ -849,9 +1051,7 @@ function App() {
                   </span>
                   <span className="console-prompt">
                     <i />{' '}
-                    {busy
-                      ? 'Resolviendo movimientos...'
-                      : `¿Qué hará ${formatName(playerPokemon?.name ?? '')}?`}
+                    {busy ? 'Resolviendo turno...' : 'Elige un movimiento'}
                   </span>
                   <span className="console-hint">ELIGE UN MOVIMIENTO</span>
                 </div>
